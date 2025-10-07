@@ -1,5 +1,5 @@
 # DATASET_PATH = "./dataset"
-OUTPUT_DIR = "./output"
+# OUTPUT_DIR = "./output"
 NUM_CLASSES = 10
 IMGSZ = 256
 BATCH_SIZE = 16
