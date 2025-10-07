@@ -3,6 +3,7 @@ torchvision
 ultralytics
 albumentations
 matplotlib
+scikit-learn
 # numpy
 opencv-python
 # pandas
