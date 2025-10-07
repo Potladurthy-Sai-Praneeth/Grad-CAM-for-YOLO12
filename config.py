@@ -1,4 +1,4 @@
-DATASET_PATH = "./dataset"
+# DATASET_PATH = "./dataset"
 OUTPUT_DIR = "./output"
 NUM_CLASSES = 10
 IMGSZ = 256

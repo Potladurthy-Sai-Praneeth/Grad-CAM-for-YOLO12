@@ -271,8 +271,11 @@ class YOLODataProcessor:
         return yaml_path
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Process dataset for YOLO")    
+    parser = argparse.ArgumentParser(description="Process dataset for YOLO")  
+    parser.add_argument('--dataset_path', type=str, required=True, help="Path to the dataset directory")  
     args = parser.parse_args()
+
+    DATASET_PATH = args.dataset_path
 
     processor = YOLODataProcessor(DATASET_PATH, OUTPUT_DIR)
     processor.process_dataset()
