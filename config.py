@@ -2,6 +2,10 @@ DATASET_PATH = "./dataset"
 OUTPUT_DIR = "./output"
 NUM_CLASSES = 10
 IMGSZ = 256
+BATCH_SIZE = 16
+EPOCHS = 50
+DATASET_YAML = "./output/dataset.yaml"
+MODEL_SIZE = 's'
 
 
 label_class_mapping = {
