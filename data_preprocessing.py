@@ -154,7 +154,7 @@ class YOLODataProcessor:
         labels_dir = self.dataset / 'labels'
         
         # Get all image files
-        image_files = list(images_dir.glob('*.jpg')) + list(images_dir.glob('*.png'))
+        image_files = list(images_dir.glob('*.jpg'))
         
         print(f"Found {len(image_files)} images")
         
@@ -162,7 +162,7 @@ class YOLODataProcessor:
         from sklearn.model_selection import train_test_split
         
         train_files, temp_files = train_test_split(image_files, test_size=0.3, random_state=42)
-        val_files, test_files = train_test_split(temp_files, test_size=0.33, random_state=42)  # 0.33 of 0.3 = 0.1
+        val_files, test_files = train_test_split(temp_files, test_size=0.33, random_state=42) 
         
         print(f"Split: {len(train_files)} train, {len(val_files)} val, {len(test_files)} test")
         

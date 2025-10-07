@@ -4,7 +4,7 @@ NUM_CLASSES = 10
 IMGSZ = 256
 BATCH_SIZE = 16
 EPOCHS = 50
-DATASET_YAML = "./output/dataset.yaml"
+DATASET_YAML = "dataset.yaml"
 MODEL_SIZE = 's'
 
 

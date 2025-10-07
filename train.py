@@ -80,12 +80,13 @@ class YOLOTrainer:
 
 
 def main():
-    if not os.path.exists(DATASET_YAML):
-        print(f"Error: Dataset YAML not found at {DATASET_YAML}")
-        print("Please run data_processing.py first to prepare the dataset.")
-        return
-    
-    trainer = YOLOTrainer(DATASET_YAML, OUTPUT_DIR, MODEL_SIZE)
+    parser = argparse.ArgumentParser(description="Train YOLO segmentation model")
+    parser.add_argument('--dataset_yaml', type=str, required=True, help="Path to dataset YAML file")
+    parser.add_argument('--output_dir', type=str, required=True, help="Directory to save training outputs")
+
+    args = parser.parse_args()
+
+    trainer = YOLOTrainer(args.dataset_yaml, args.output_dir, MODEL_SIZE)
 
     train_results = trainer.train()
 

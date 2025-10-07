@@ -1,0 +1,11 @@
+torch
+torchvision
+albumentations
+matplotlib
+numpy
+opencv-python
+pandas
+pillow
+pydantic
+tqdm
+ultralytics
