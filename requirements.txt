@@ -1,13 +1,10 @@
-albumentations==2.0.8
-matplotlib==3.10.5
-numpy==2.2.6
-opencv-python==4.12.0.88
-pandas==2.3.1
-pillow==11.3.0
-pydantic==2.11.7
-requests==2.32.4
-scipy==1.16.1
-torch==2.7.1
-torchvision==0.22.1
-tqdm==4.67.1
-ultralytics==8.3.172
+torch
+torchvision
+ultralytics
+albumentations
+matplotlib
+# numpy
+opencv-python
+# pandas
+pillow
+tqdm
