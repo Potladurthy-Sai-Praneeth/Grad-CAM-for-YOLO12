@@ -2,8 +2,8 @@
 # OUTPUT_DIR = "./output"
 NUM_CLASSES = 10
 IMGSZ = 256
-BATCH_SIZE = 128
-EPOCHS = 50
+BATCH_SIZE = 400
+EPOCHS = 100
 DATASET_YAML = "dataset.yaml"
 MODEL_SIZE = 's'
 
