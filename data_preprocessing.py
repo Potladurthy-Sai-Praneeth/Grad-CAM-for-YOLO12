@@ -180,10 +180,7 @@ class YOLODataProcessor:
         image_files = list(images_dir.glob('*.jpg'))
         
         print(f"Found {len(image_files)} images")
-        
-        # Split dataset: 70% train, 20% val, 10% test
-        from sklearn.model_selection import train_test_split
-        
+               
         train_files, temp_files = train_test_split(image_files, test_size=0.3, random_state=42)
         val_files, test_files = train_test_split(temp_files, test_size=0.33, random_state=42) 
         

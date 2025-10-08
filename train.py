@@ -25,7 +25,7 @@ class YOLOTrainer:
         self.device = [0,1]
         # print(f"Using device: {self.device}")
         
-        self.model = YOLO(f'yolov12{model_size}.pt')
+        self.model = YOLO(f'yolo12{model_size}.pt')
         self.num_workers = torch.multiprocessing.cpu_count()  
 
 
