@@ -48,8 +48,6 @@ class YOLODataProcessor:
     def setup_augmentations(self):
         """
         Setup augmentation pipelines for training data
-        Since dataset is very limited we rely on heavy augmentations to generate more data.
-        Heavy augmentations are applied to the training set, while light augmentations are applied to the validation set.
         """
         self.train_transform = A.Compose([
             A.HorizontalFlip(p=0.5),
@@ -58,8 +56,9 @@ class YOLODataProcessor:
             A.Rotate(limit=45, p=0.7),
             A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.7),
             # A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.5),
-            # A.GaussianBlur(blur_limit=(3, 7), p=0.3),
-            A.GaussNoise(p=0.3),
+            A.RandomCrop(height=self.imgsz, width=self.imgsz, p=0.5),
+            A.GaussianBlur(blur_limit=(3, 7), p=0.3),
+            # A.GaussNoise(p=0.3),
             # A.RandomScale(scale_limit=0.2, p=0.5),
             # A.ElasticTransform(alpha=1, sigma=50, p=0.3),
             # A.GridDistortion(p=0.3),
@@ -81,20 +80,20 @@ class YOLODataProcessor:
             clip=True
         ))
 
-    def clean_labels(self, dataset_path, mapping):
-        path = os.path.join(Path(dataset_path),'labels')
-        for file in os.listdir(path):
-            label = file.split('_')[0].strip()
-            with open(os.path.join(path, file), 'r') as f:
-                content = f.readlines()[0]
+    # def clean_labels(self, dataset_path, mapping):
+    #     path = os.path.join(Path(dataset_path),'labels')
+    #     for file in os.listdir(path):
+    #         label = file.split('_')[0].strip()
+    #         with open(os.path.join(path, file), 'r') as f:
+    #             content = f.readlines()[0]
 
-            new_label = mapping.get(label)
-            parts = content.strip().split()
-            parts[0] = str(new_label)
-            final_str = ' '.join(parts) + '\n'
+    #         new_label = mapping.get(label)
+    #         parts = content.strip().split()
+    #         parts[0] = str(new_label)
+    #         final_str = ' '.join(parts) + '\n'
 
-            with open(os.path.join(path,file),'w') as f:
-                f.writelines(final_str)
+    #         with open(os.path.join(path,file),'w') as f:
+    #             f.writelines(final_str)
 
     def apply_augmentation(self, image, annotations, split):
         """
