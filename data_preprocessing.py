@@ -32,7 +32,7 @@ class YOLODataProcessor:
         self.imgsz = IMGSZ
 
         self.setup_augmentations()
-        self.clean_labels(self.dataset, self.label_class_mapping)
+        # self.clean_labels(self.dataset, self.label_class_mapping)
     
     def setup_directories(self):
         """
@@ -64,12 +64,22 @@ class YOLODataProcessor:
             # A.ElasticTransform(alpha=1, sigma=50, p=0.3),
             # A.GridDistortion(p=0.3),
             # A.OpticalDistortion(p=0.3),
-        ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
+        ], bbox_params=A.BboxParams(
+            format='yolo', 
+            label_fields=['class_labels'],
+            min_visibility=0.3,  # Keep boxes with at least 30% visibility
+            clip=True  # Clip bboxes to valid range
+        ))
         
         self.val_transform = A.Compose([
             A.HorizontalFlip(p=0.3),
             A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.3),
-        ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
+        ], bbox_params=A.BboxParams(
+            format='yolo', 
+            label_fields=['class_labels'],
+            min_visibility=0.3,
+            clip=True
+        ))
 
     def clean_labels(self, dataset_path, mapping):
         path = os.path.join(Path(dataset_path),'labels')
@@ -104,11 +114,23 @@ class YOLODataProcessor:
         bboxes = []
         class_labels = []
         
+        # Small epsilon to avoid floating point precision issues
+        epsilon = 1e-6
+        
         for ann in annotations:
             parts = ann.strip().split()
             if len(parts) == 5:
                 cls = int(parts[0])
-                bboxes.append(list(map(float, parts[1:])))
+                # Parse and clamp bbox coordinates BEFORE augmentation
+                x_center, y_center, width, height = map(float, parts[1:])
+                
+                # Clamp to valid range [0, 1] with epsilon buffer
+                x_center = max(epsilon, min(1 - epsilon, x_center))
+                y_center = max(epsilon, min(1 - epsilon, y_center))
+                width = max(epsilon, min(1 - epsilon, width))
+                height = max(epsilon, min(1 - epsilon, height))
+                
+                bboxes.append([x_center, y_center, width, height])
                 class_labels.append(cls)
         
         # Apply augmentation
@@ -124,10 +146,11 @@ class YOLODataProcessor:
             for bbox, cls in zip(aug_bboxes, aug_labels):
                 x_center, y_center, width, height = bbox
                 
-                x_center = max(0, min(1, x_center))
-                y_center = max(0, min(1, y_center))
-                width = max(0, min(1, width))
-                height = max(0, min(1, height))
+                # Clamp again after augmentation to ensure valid range
+                x_center = max(epsilon, min(1 - epsilon, x_center))
+                y_center = max(epsilon, min(1 - epsilon, y_center))
+                width = max(epsilon, min(1 - epsilon, width))
+                height = max(epsilon, min(1 - epsilon, height))
                 
                 # Only keep valid boxes
                 if width > 0 and height > 0:
