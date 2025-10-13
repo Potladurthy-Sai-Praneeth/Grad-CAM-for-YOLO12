@@ -1,0 +1,3 @@
+[1] https://www.kaggle.com/datasets/sebastianpalaciob/plantvillage-for-object-detection-yolo
+[2] https://github.com/jacobgil/pytorch-grad-cam
+[3] https://github.com/rigvedrs/YOLO-V12-CAM
