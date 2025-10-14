@@ -23,9 +23,18 @@ def apply_heatmap(image, saliency_map, alpha=0.5):
     """
     # Convert saliency map to numpy and normalize
     if torch.is_tensor(saliency_map):
-        saliency_map = saliency_map.squeeze().cpu().numpy()
+        saliency_map = saliency_map.cpu().numpy()
     
+    saliency_min = saliency_map.min()
+    saliency_max = saliency_map.max()
+    
+    if saliency_max - saliency_min > 1e-10:  # Avoid division by zero
+        saliency_map = (saliency_map - saliency_min) / (saliency_max - saliency_min)
+    else:
+        saliency_map = np.zeros_like(saliency_map)
+
     # Normalize to 0-255
+    saliency_map = 1.0 - saliency_map
     saliency_map = np.uint8(255 * saliency_map)
     
     # Apply colormap
@@ -82,6 +91,7 @@ def process_images(model_path, input_dir, output_dir):
         # Process each image
         for idx, img_name in enumerate(image_files):
             img_path = os.path.join(class_path, img_name)
+            gt_idx = label_class_mapping[img_path.split('/')[-1].split('_')[0]]
             
             # Read image
             img_bgr = cv2.imread(img_path)
@@ -98,12 +108,12 @@ def process_images(model_path, input_dir, output_dir):
             
             # Generate GradCAM
             try:
-                saliency_maps = gradcam(img_tensor)
-                print(f'Saleincy maps size is {saliency_maps.shape}')
-                
-                if len(saliency_maps) > 0:
+                saliency_map = gradcam(img_tensor, gt_idx)
+                print(f'Saliency map size is {saliency_map.shape}')
+
+                if saliency_map is not None:
                     # Use the first saliency map
-                    saliency_map = saliency_maps[0]
+                    # saliency_map = saliency_maps[0]
                     
                     # Apply heatmap
                     overlaid, heatmap = apply_heatmap(img_resized, saliency_map)

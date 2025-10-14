@@ -14,26 +14,21 @@ class ActivationsAndGradients:
 
     def __init__(self, model, target_layers):
         self.model = model
-        self.model.model.train()
         self.gradients = []
         self.activations = []
         self.handles = []
         for target_layer in target_layers:
             self.handles.append(
                 target_layer.register_forward_hook(self.save_activation))
-            # Because of https://github.com/pytorch/pytorch/issues/61519,
-            # we don't use backward hook to record gradients.
             self.handles.append(
                 target_layer.register_forward_hook(self.save_gradient))
 
     def save_activation(self, module, input, output):
-        activation = output
-
-        self.activations.append(activation)
+        self.activations.append(output.cpu().detach())
 
     def save_gradient(self, module, input, output):
         if not hasattr(output, "requires_grad") or not output.requires_grad:
-            # You can only register hooks on input_img requires grad.
+            # You can only register hooks on tensor requires grad.
             return
 
         # Gradients are computed in reverse order
@@ -48,12 +43,13 @@ class ActivationsAndGradients:
 
         x = x.requires_grad_(True)
 
-        return self.model.model(x)
+        # model.model(x) returns a tuple of tensors where the first element is the output with bounding boxe and confidence scores and 
+        # the rest are the list of feature maps at different scales.
+        return self.model.model(x)[0]  
 
     def release(self):
         for handle in self.handles:
-            handle.remove()
-    
+            handle.remove()    
 
 class YOLO12GradCAM:
 
@@ -68,90 +64,101 @@ class YOLO12GradCAM:
         self.model.to(self.device)
 
     
-    def get_cam_weights(self,input_img: np.array,activations,grads) -> np.ndarray:
+    def avg_pool_gradients(self,input_tensor,activations,grads):
+        '''
+        This function computes the global average pooling of the gradients across the spatial dimensions.
+        '''
         if len(grads.shape) == 4:
-            return np.mean(grads, axis=(2, 3))
+            return torch.mean(grads, dim=(2, 3))
         else:
-            raise ValueError("Invalid grads shape. Shape of grads should be 4 (2D image) or 5 (3D image).")
+            raise ValueError("Invalid grads shape. Shape of grads should be 4 (2D image) ")
 
-    def get_cam_image(self,input_img: np.array,activations,grads):
-        weights = self.get_cam_weights(input_img,activations,grads)
+
+    def mul_gradients_activations(self,input_tensor,activations,grads):
+        '''
+        This function multiples the neuron importance (avg pool grads) with activations and sum across channel dimensions
+        '''
+        weights = self.avg_pool_gradients(input_tensor,activations,grads)
         weighted_activations = weights[:, :, None, None] * activations
-        return weighted_activations.sum(axis=1)
+        return weighted_activations.sum(dim=1)
 
-    def compute_cam_per_layer(self,input_img: np.array,activations_and_grads: object) -> np.ndarray:
-        activations_list = [a.cpu().data.numpy() for a in activations_and_grads.activations]
-        grads_list = [g.cpu().data.numpy() for g in activations_and_grads.gradients]
+    def compute_cam_per_layer(self,input_tensor,activations_and_grads):
+        activations_list = [a for a in activations_and_grads.activations]
+        grads_list = [g for g in activations_and_grads.gradients]
 
         if len(activations_list) != len(grads_list):
             raise ValueError("Number of activation layers and gradient layers must be the same.")
 
-        target_size = input_img.shape[3], input_img.shape[2]
+        target_size = input_tensor.shape[3], input_tensor.shape[2]
 
         cam_per_target_layer = []
         # Loop over the saliency image from every layer
-        for i in range(len(activations_list)):
+        for i in range(min(len(activations_list), len(grads_list))):
             layer_activations = activations_list[i]
             layer_grads = grads_list[i]
-            cam = self.get_cam_image(input_img,layer_activations,layer_grads)                
-            cam = np.maximum(cam, 0)
+            cam = self.mul_gradients_activations(input_tensor,layer_activations,layer_grads)   
+            cam = F.relu(cam)
             scaled = self.scale_cam_image(cam, target_size)
-            cam_per_target_layer.append(scaled[:, None, :])
+            # cam_per_target_layer.append(scaled[:, None, :])
+            cam_per_target_layer.append(scaled)
 
         return cam_per_target_layer
 
-    def aggregate_multi_layers(self,_input_img: np.array, cam_per_target_layer: np.ndarray) -> np.ndarray:
-        cam_per_target_layer = np.concatenate(cam_per_target_layer, axis=1)
-        cam_per_target_layer = np.maximum(cam_per_target_layer, 0)
-        result = np.mean(cam_per_target_layer, axis=1)
-        W, H = _input_img.shape[3], _input_img.shape[2]
-        return self.scale_cam_image(result, target_size=(W, H))
-
-    def scale_cam_image(self, cam, target_size=None):
-        result = []
-        for img in cam:
-            img = img - np.min(img)
-            img = img / (1e-7 + np.max(img))
-            if target_size is not None:
-                img = cv2.resize(img, target_size)
-            result.append(img)
-        result = np.float32(result)
-
+    def aggregate_multi_layers(self,cam_per_target_layer):
+        '''
+        As we hooked multiple layers, we need to aggregate the saliency maps from different layers.
+        Here we use max operation to aggregate the saliency maps from different layers preserving the maximum gradient information across multiple paths
+        '''
+        cam_per_target_layer = torch.stack(cam_per_target_layer, dim=0)
+        result = torch.max(cam_per_target_layer,dim=0).values
         return result
 
+    def scale_cam_image(self,feature_map, target_size):
+        '''
+        This function uses bilinear interpolation to scale the cam image to the target size. 
+        '''
+        if feature_map.dim() == 3:
+            feature_map = feature_map.unsqueeze(0)
+            squeeze_batch = True
+        else:
+            squeeze_batch = False
+        
+        # Perform bilinear interpolation
+        resized = F.interpolate(
+            feature_map,
+            size=target_size,
+            mode='bilinear',
+            align_corners=False
+        )
+        
+        # Remove batch dimension if it was added
+        if squeeze_batch:
+            resized = resized.squeeze(0)
+        
+        return resized
+
     
-    def forward(self, input_img):
+    def forward(self, input_img,gt_idx):
+        assert gt_idx is not None, "Please provide gt_idx for the target class"
         input_img = input_img.to(self.device)
 
         with torch.set_grad_enabled(True):
             raw_outputs = self.activations_and_grads(input_img)
-            # This returns a list 3 tensors one for each spatial resolution
-
-            raw_output = raw_outputs[-1]  
-            # This -1 is necessary as feature maps are cascaded in reverse way, if we use 0 we only get one gradient for the largest feature map
-
-            batch_size, num_channels, height, width = raw_output.shape
-            preds = raw_output.permute(0, 2, 3, 1).reshape(batch_size, -1, num_channels - 4)
-            
-            box = preds[..., :4]
-            cls = preds[..., 4:]
-
-            max_scores, max_indices = torch.max(cls, dim=-1)
-            best_pred_idx = torch.argmax(max_scores, dim=-1)
-
-            target_score = cls[0, best_pred_idx[0], max_indices[0, best_pred_idx[0]]]
+            index = 4 + gt_idx
+            subset_scores = raw_outputs[:,index,:]
+            target_score = subset_scores[:,torch.argmax(subset_scores)]
 
             self.model.model.zero_grad()
             target_score.backward(retain_graph=True)
 
         cam_per_layer = self.compute_cam_per_layer(input_img,self.activations_and_grads)
-        return self.aggregate_multi_layers(input_img,cam_per_layer)
+        return self.aggregate_multi_layers(cam_per_layer).squeeze(0)
 
 
 
-    def __call__(self,input_img):
+    def __call__(self,input_img,gt_idx):
         # store for final resize
-        return self.forward(input_img)
+        return self.forward(input_img,gt_idx)
 
     def __del__(self):
         self.activations_and_grads.release()
@@ -162,5 +169,4 @@ class YOLO12GradCAM:
     def __exit__(self, exc_type, exc_value, exc_tb):
         self.activations_and_grads.release()
         if isinstance(exc_value, IndexError):
-            print(f"An exception occurred in CAM with block: {exc_type}. Message: {exc_value}")
             return True
