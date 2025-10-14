@@ -58,7 +58,7 @@ class YOLODataProcessor:
             # A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.5),
             A.RandomCrop(height=self.imgsz, width=self.imgsz, p=0.5),
             A.GaussianBlur(blur_limit=(3, 7), p=0.3),
-            # A.GaussNoise(p=0.3),
+            A.GaussNoise(p=0.3),
             # A.RandomScale(scale_limit=0.2, p=0.5),
             # A.ElasticTransform(alpha=1, sigma=50, p=0.3),
             # A.GridDistortion(p=0.3),

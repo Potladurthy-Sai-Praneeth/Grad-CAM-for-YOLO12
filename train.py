@@ -52,6 +52,8 @@ class YOLOTrainer:
             'warmup_epochs': 3,
             'warmup_momentum': 0.8,
             'warmup_bias_lr': 0.1,
+            'box': 4,
+            'cls': 5,   # Giving high emphasis on classification loss (Because the interpretability is affected more by classification than localization)
         }
         
         print("Starting YOLO segmentation training...")
