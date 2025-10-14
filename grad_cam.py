@@ -99,8 +99,7 @@ class YOLO12GradCAM:
             cam = self.mul_gradients_activations(input_tensor,layer_activations,layer_grads)   
             cam = F.relu(cam)
             scaled = self.scale_cam_image(cam, target_size)
-            # cam_per_target_layer.append(scaled[:, None, :])
-            cam_per_target_layer.append(scaled)
+            cam_per_target_layer.append(scaled[:, None, :]) 
 
         return cam_per_target_layer
 
@@ -109,32 +108,43 @@ class YOLO12GradCAM:
         As we hooked multiple layers, we need to aggregate the saliency maps from different layers.
         Here we use max operation to aggregate the saliency maps from different layers preserving the maximum gradient information across multiple paths
         '''
-        cam_per_target_layer = torch.stack(cam_per_target_layer, dim=0)
-        result = torch.max(cam_per_target_layer,dim=0).values
+        cam_per_target_layer = torch.stack(cam_per_target_layer, dim=1)
+        # result = torch.max(cam_per_target_layer,dim=1).values
+        result = torch.mean(cam_per_target_layer, dim=1)
         return result
 
     def scale_cam_image(self,feature_map, target_size):
         '''
         This function uses bilinear interpolation to scale the cam image to the target size. 
         '''
-        if feature_map.dim() == 3:
-            feature_map = feature_map.unsqueeze(0)
+        if not (isinstance(target_size, (tuple, list)) and len(target_size) == 2):
+            raise ValueError("target_size must be (H, W)")
+
+        if feature_map.dim() == 2:
+            # (H, W) -> (1, 1, H, W)
+            fm = feature_map.unsqueeze(0).unsqueeze(0)
+            squeeze_channel = True
             squeeze_batch = True
-        else:
+        elif feature_map.dim() == 3:
+            # (B, H, W) -> (B, 1, H, W)
+            fm = feature_map.unsqueeze(1)
+            squeeze_channel = True
             squeeze_batch = False
-        
-        # Perform bilinear interpolation
-        resized = F.interpolate(
-            feature_map,
-            size=target_size,
-            mode='bilinear',
-            align_corners=False
-        )
-        
-        # Remove batch dimension if it was added
+        elif feature_map.dim() == 4:
+            # already (B, C, H, W)
+            fm = feature_map
+            squeeze_channel = False
+            squeeze_batch = False
+        else:
+            raise ValueError("Unsupported feature_map dimensions")
+
+        resized = F.interpolate(fm, size=target_size, mode='bilinear', align_corners=False)
+
+        # convert back to (B, H, W)
+        if squeeze_channel:
+            resized = resized.squeeze(1)  # remove channel dim
         if squeeze_batch:
-            resized = resized.squeeze(0)
-        
+            resized = resized.squeeze(0)  # if originally single image, remove batch dim
         return resized
 
     
@@ -152,7 +162,7 @@ class YOLO12GradCAM:
             target_score.backward(retain_graph=True)
 
         cam_per_layer = self.compute_cam_per_layer(input_img,self.activations_and_grads)
-        return self.aggregate_multi_layers(cam_per_layer).squeeze(0)
+        return self.aggregate_multi_layers(cam_per_layer)
 
 
 

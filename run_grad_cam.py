@@ -21,28 +21,59 @@ def apply_heatmap(image, saliency_map, alpha=0.5):
     Returns:
         Overlaid image
     """
-    # Convert saliency map to numpy and normalize
+    # Convert image to numpy if needed
+    if torch.is_tensor(image):
+        image = image.cpu().numpy()
+        # Handle batch dimension (1, C, H, W) -> (C, H, W)
+        if image.ndim == 4:
+            image = image[0]
+        # Convert (C, H, W) to (H, W, C)
+        if image.ndim == 3 and image.shape[0] in [1, 3]:
+            image = np.transpose(image, (1, 2, 0))
+    
+    # Convert saliency map to numpy if needed
     if torch.is_tensor(saliency_map):
         saliency_map = saliency_map.cpu().numpy()
     
+    # Handle batch dimension (1, 1, H, W) -> (1, H, W)
+    if saliency_map.ndim == 4:
+        saliency_map = saliency_map[0]
+    
+    # Handle channel dimension (1, H, W) -> (H, W)
+    if saliency_map.ndim == 3 and saliency_map.shape[0] == 1:
+        saliency_map = saliency_map[0]
+    
+    # Normalize image to 0-255 range
+    if image.max() <= 1.0:
+        image = (image * 255).astype(np.uint8)
+    else:
+        image = image.astype(np.uint8)
+    
+    # Handle grayscale images - convert to RGB
+    if image.ndim == 2:
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    elif image.shape[2] == 1:
+        image = cv2.cvtColor(image.squeeze(), cv2.COLOR_GRAY2RGB)
+    
+    # Normalize saliency map to 0-1 range first
     saliency_min = saliency_map.min()
     saliency_max = saliency_map.max()
-    
-    if saliency_max - saliency_min > 1e-10:  # Avoid division by zero
+    if saliency_max > saliency_min:
         saliency_map = (saliency_map - saliency_min) / (saliency_max - saliency_min)
     else:
         saliency_map = np.zeros_like(saliency_map)
-
-    # Normalize to 0-255
-    saliency_map = 1.0 - saliency_map
+    
+    # Convert to 0-255 range
+    saliency_map = np.clip(saliency_map, 0, 1)
     saliency_map = np.uint8(255 * saliency_map)
+    
+    # Resize saliency map to match image size if needed
+    if saliency_map.shape[:2] != image.shape[:2]:
+        saliency_map = cv2.resize(saliency_map, (image.shape[1], image.shape[0]))
     
     # Apply colormap
     heatmap = cv2.applyColorMap(saliency_map, cv2.COLORMAP_JET)
-    
-    # Resize heatmap to match image size if needed
-    if heatmap.shape[:2] != image.shape[:2]:
-        heatmap = cv2.resize(heatmap, (image.shape[1], image.shape[0]))
+    heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
     
     # Overlay heatmap on original image
     overlaid = cv2.addWeighted(image, 1 - alpha, heatmap, alpha, 0)
@@ -112,9 +143,6 @@ def process_images(model_path, input_dir, output_dir):
                 print(f'Saliency map size is {saliency_map.shape}')
 
                 if saliency_map is not None:
-                    # Use the first saliency map
-                    # saliency_map = saliency_maps[0]
-                    
                     # Apply heatmap
                     overlaid, heatmap = apply_heatmap(img_resized, saliency_map)
                     
@@ -180,8 +208,7 @@ def create_combined_visualization(class_samples, output_path):
         axes[idx, 1].axis('off')
         
         # Heatmap only
-        heatmap_rgb = cv2.cvtColor(sample['heatmap'], cv2.COLOR_BGR2RGB)
-        axes[idx, 2].imshow(heatmap_rgb)
+        axes[idx, 2].imshow(sample['heatmap'])
         axes[idx, 2].set_title(f'{class_name}\n(Heatmap)', fontsize=12, fontweight='bold')
         axes[idx, 2].axis('off')
     
