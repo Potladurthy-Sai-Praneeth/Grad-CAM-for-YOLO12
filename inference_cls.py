@@ -38,7 +38,7 @@ def load_model_and_config(model_path, dataset_yaml):
     Returns:
         model: Loaded YOLO model
         dataset_config: Dataset configuration dictionary
-        class_names: List of class names
+        class_names: List of class names (in model's order)
         num_classes: Number of classes
     """
     print(f"Loading model from: {model_path}")
@@ -57,33 +57,89 @@ def load_model_and_config(model_path, dataset_yaml):
     print("\nDataset Configuration:")
     print(f"- Dataset path: {dataset_config.get('path', 'N/A')}")
     print(f"- Number of classes: {dataset_config.get('nc', 'N/A')}")
-    print(f"- Class names from YAML: {dataset_config.get('names', 'N/A')}")
     
-    # Use class names from YAML (this matches the model's training order)
-    class_names = dataset_config['names']
-    num_classes = dataset_config['nc']
+    # Get class names from YAML (this is what the model was trained with)
+    yaml_class_names = dataset_config['names']
+    
+    # Try to get class names from model if available
+    model_class_names = None
+    if hasattr(model, 'names') and model.names:
+        model_class_names = model.names
+        print(f"- Model has class names: {model_class_names}")
+    
+    # Use model's class names if available, otherwise use YAML
+    if model_class_names:
+        # If model_class_names is a dict, convert to list
+        if isinstance(model_class_names, dict):
+            class_names = [model_class_names[i] for i in sorted(model_class_names.keys())]
+        else:
+            class_names = model_class_names
+        print("✓ Using class names from model")
+    else:
+        class_names = yaml_class_names
+        print("✓ Using class names from YAML")
+    
+    print(f"\nClass names being used (in model order):")
+    for i, name in enumerate(class_names):
+        print(f"  {i}: {name}")
     
     # Verify against config.py mapping
-    print("\nClass name mapping from config.py:")
-    for i in range(min(num_classes, len(class_name_mapping))):
+    print("\n⚠️  Verification against config.py:")
+    mismatches = []
+    for i in range(len(class_names)):
         expected_name = class_name_mapping.get(i, 'Unknown')
-        yaml_name = class_names[i] if i < len(class_names) else 'N/A'
-        match = "✓" if expected_name == yaml_name else "✗ MISMATCH!"
-        print(f"  Class {i}: config='{expected_name}' | yaml='{yaml_name}' {match}")
+        actual_name = class_names[i] if i < len(class_names) else 'N/A'
+        match = "✓" if expected_name == actual_name else "✗"
+        print(f"  Class {i}: config='{expected_name:30s}' | model='{actual_name:30s}' {match}")
+        if expected_name != actual_name:
+            mismatches.append((i, expected_name, actual_name))
+    
+    if mismatches:
+        print("\n❌ WARNING: Class name mismatches detected!")
+        print("   The model's class order differs from config.py")
+        print("   This will cause incorrect metric reporting!")
+        print("\n   Mismatches:")
+        for idx, expected, actual in mismatches:
+            print(f"   - Index {idx}: expected '{expected}' but model has '{actual}'")
+        print("\n   SOLUTION: Update config.py class_name_mapping to match model order")
+        print("   OR: Retrain the model with the correct class order")
+    else:
+        print("\n✓ All class names match config.py perfectly!")
+    
+    num_classes = len(class_names)
     
     return model, dataset_config, class_names, num_classes
 
 
-def get_test_images(dataset_config):
+def create_class_mapping(class_names):
+    """
+    Create a mapping from class name to class ID based on model's class order
+    
+    Args:
+        class_names: List of class names in model's order
+    
+    Returns:
+        name_to_id: Dictionary mapping class name to class ID
+    """
+    name_to_id = {name: idx for idx, name in enumerate(class_names)}
+    
+    print("\n📋 Class Name to ID Mapping (for ground truth):")
+    for name, idx in sorted(name_to_id.items(), key=lambda x: x[1]):
+        print(f"   '{name}' -> {idx}")
+    
+    return name_to_id
+
+
+def get_test_images(dataset_config, class_names):
     """
     Get list of test images from the dataset organized by class folders
     
     Args:
         dataset_config: Dataset configuration dictionary
+        class_names: List of class names in model's order
     
     Returns:
         test_images: List of dictionaries with image paths and true labels
-        class_names: List of class names
     """
     dataset_path = Path(dataset_config['path'])
     test_path = dataset_path / dataset_config.get('test', 'test')
@@ -92,34 +148,57 @@ def get_test_images(dataset_config):
     print(f"Test path exists: {test_path.exists()}")
     
     test_images = []
-    class_names = dataset_config['names']
+    
+    # Create name to ID mapping based on model's class order
+    name_to_id = {name: idx for idx, name in enumerate(class_names)}
     
     if test_path.exists():
-        # Iterate through class directories
-        for class_name in class_names:
-            class_dir = test_path / class_name
-            if class_dir.exists() and class_dir.is_dir():
-                # Get all images in the class directory
-                image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
-                class_images = []
-                for ext in image_extensions:
-                    class_images.extend(list(class_dir.glob(ext)))
-                
-                print(f"Class '{class_name}': {len(class_images)} images")
-                
-                # Store image info with true label
-                for img_path in class_images:
-                    test_images.append({
-                        'path': img_path,
-                        'true_label': class_name,
-                        'true_class_id': class_names.index(class_name)
-                    })
+        # Iterate through all subdirectories (class folders)
+        class_folders = [d for d in test_path.iterdir() if d.is_dir()]
+        
+        print(f"\nFound {len(class_folders)} class folders in test directory")
+        
+        for class_dir in sorted(class_folders):
+            class_name = class_dir.name
+            
+            # Check if this class name exists in model's classes
+            if class_name not in name_to_id:
+                print(f"⚠️  WARNING: Folder '{class_name}' not in model's classes - SKIPPING!")
+                continue
+            
+            # Get the correct class ID from model's mapping
+            true_class_id = name_to_id[class_name]
+            
+            # Get all images in the class directory
+            image_extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
+            class_images = []
+            for ext in image_extensions:
+                class_images.extend(list(class_dir.glob(ext)))
+            
+            print(f"Class '{class_name}' (ID={true_class_id}): {len(class_images)} images")
+            
+            # Store image info with true label
+            for img_path in class_images:
+                test_images.append({
+                    'path': img_path,
+                    'true_label': class_name,
+                    'true_class_id': true_class_id  # Use model's class ID!
+                })
         
         print(f"\nTotal test images found: {len(test_images)}")
+        
+        # Print summary by class
+        from collections import Counter
+        class_counts = Counter([img['true_label'] for img in test_images])
+        print("\nTest set distribution:")
+        for class_name in class_names:
+            count = class_counts.get(class_name, 0)
+            print(f"  {class_name:30s}: {count:4d} images")
+            
     else:
         print("Warning: Test path does not exist!")
     
-    return test_images, class_names
+    return test_images
 
 
 def run_inference(model, test_images, class_names, imgsz=None, top_k=5):
@@ -150,6 +229,10 @@ def run_inference(model, test_images, class_names, imgsz=None, top_k=5):
     all_predictions = []
     inference_times = []
     
+    # Debug flag for first few predictions
+    debug_count = 0
+    max_debug = 3
+    
     for img_info in tqdm(test_images, desc="Processing images"):
         img_path = img_info['path']
         
@@ -173,6 +256,20 @@ def run_inference(model, test_images, class_names, imgsz=None, top_k=5):
         top_k_indices = probs.top5  # Get top 5 predictions
         top_k_confidences = probs.top5conf.cpu().numpy()
         
+        # Get predicted class ID and name
+        pred_class_id = int(probs.top1)
+        pred_class_name = class_names[pred_class_id]
+        
+        # Debug: Print first few predictions
+        if debug_count < max_debug:
+            print(f"\n🔍 Debug Prediction #{debug_count + 1}:")
+            print(f"   Image: {img_path.name}")
+            print(f"   True: {img_info['true_label']} (ID={img_info['true_class_id']})")
+            print(f"   Pred: {pred_class_name} (ID={pred_class_id})")
+            print(f"   Confidence: {float(probs.top1conf):.3f}")
+            print(f"   Match: {'✓ CORRECT' if pred_class_id == img_info['true_class_id'] else '✗ WRONG'}")
+            debug_count += 1
+        
         # Store prediction data
         pred_data = {
             'image_path': str(img_path),
@@ -180,8 +277,8 @@ def run_inference(model, test_images, class_names, imgsz=None, top_k=5):
             'true_label': img_info['true_label'],
             'true_class_id': img_info['true_class_id'],
             'inference_time': inference_time,
-            'top_class_id': int(probs.top1),
-            'top_class_name': class_names[int(probs.top1)],
+            'top_class_id': pred_class_id,
+            'top_class_name': pred_class_name,
             'top_confidence': float(probs.top1conf),
             'top_k_predictions': []
         }
@@ -811,12 +908,20 @@ def main():
         args.model, args.data
     )
     
-    # Get test images
-    test_images, class_names = get_test_images(dataset_config)
+    # Get test images with correct class ID mapping
+    test_images = get_test_images(dataset_config, class_names)
     
     if len(test_images) == 0:
         print("Error: No test images found!")
         return
+    
+    # Print a few sample mappings to verify
+    print("\n🔍 Sample ground truth verification (first 3 images):")
+    for i, img_info in enumerate(test_images[:3]):
+        print(f"   Image: {img_info['path'].name}")
+        print(f"   Folder: {img_info['path'].parent.name}")
+        print(f"   True Label: {img_info['true_label']} (ID={img_info['true_class_id']})")
+        print()
     
     # Run inference with proper image size
     all_predictions, inference_times = run_inference(
