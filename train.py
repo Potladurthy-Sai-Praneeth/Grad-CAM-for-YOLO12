@@ -8,7 +8,7 @@ from config import *
 
 
 class YOLOTrainer:
-    def __init__(self, dataset_yaml, output_dir, model_size='n'):
+    def __init__(self, dataset_yaml, output_dir, model_size='n', mode='bbox'):
         """
         Initialize YOLO trainer
         Args:
@@ -23,11 +23,16 @@ class YOLOTrainer:
         self.output_dir = output_dir
         self.model_size = model_size
         self.device = [0,1]
+        self.mode = mode
         # print(f"Using device: {self.device}")
         
-        # self.model = YOLO(f'yolo12{model_size}.pt')
-        self.model = YOLO('yolo12-cls.yaml').load(f'yolo12{model_size}.pt') 
-        self.num_workers = torch.multiprocessing.cpu_count()  
+        if self.mode == 'bbox':
+            self.model = YOLO(f'yolo12{model_size}.pt')
+
+        elif self.mode == 'cls':
+            self.model = YOLO('yolo12-cls.yaml').load(f'yolo12{model_size}.pt')
+
+        self.num_workers = torch.multiprocessing.cpu_count()
 
 
     def train(self):
@@ -86,10 +91,12 @@ def main():
     parser = argparse.ArgumentParser(description="Train YOLO segmentation model")
     parser.add_argument('--dataset_yaml', type=str, required=True, help="Path to dataset YAML file")
     parser.add_argument('--output_dir', type=str, required=True, help="Directory to save training outputs")
+    parser.add_argument('--model_size', type=str, default='n', choices=['n', 's', 'm', 'l', 'x'], help="YOLO model size")
+    parser.add_argument('--mode', type=str, default='bbox', choices=['bbox', 'cls'], help="Training mode: 'bbox' for bounding box, 'cls' for classification")
 
     args = parser.parse_args()
 
-    trainer = YOLOTrainer(args.dataset_yaml, args.output_dir, MODEL_SIZE)
+    trainer = YOLOTrainer(args.dataset_yaml, args.output_dir, model_size=args.model_size, mode=args.mode)
 
     train_results = trainer.train()
 
