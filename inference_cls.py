@@ -24,6 +24,7 @@ from sklearn.metrics import (
     matthews_corrcoef, roc_auc_score, balanced_accuracy_score
 )
 from collections import Counter, defaultdict
+from config import IMGSZ, class_name_mapping
 
 
 def load_model_and_config(model_path, dataset_yaml):
@@ -56,10 +57,19 @@ def load_model_and_config(model_path, dataset_yaml):
     print("\nDataset Configuration:")
     print(f"- Dataset path: {dataset_config.get('path', 'N/A')}")
     print(f"- Number of classes: {dataset_config.get('nc', 'N/A')}")
-    print(f"- Class names: {dataset_config.get('names', 'N/A')}")
+    print(f"- Class names from YAML: {dataset_config.get('names', 'N/A')}")
     
+    # Use class names from YAML (this matches the model's training order)
     class_names = dataset_config['names']
     num_classes = dataset_config['nc']
+    
+    # Verify against config.py mapping
+    print("\nClass name mapping from config.py:")
+    for i in range(min(num_classes, len(class_name_mapping))):
+        expected_name = class_name_mapping.get(i, 'Unknown')
+        yaml_name = class_names[i] if i < len(class_names) else 'N/A'
+        match = "✓" if expected_name == yaml_name else "✗ MISMATCH!"
+        print(f"  Class {i}: config='{expected_name}' | yaml='{yaml_name}' {match}")
     
     return model, dataset_config, class_names, num_classes
 
@@ -112,7 +122,7 @@ def get_test_images(dataset_config):
     return test_images, class_names
 
 
-def run_inference(model, test_images, class_names, top_k=5):
+def run_inference(model, test_images, class_names, imgsz=None, top_k=5):
     """
     Run inference on all test images
     
@@ -120,6 +130,7 @@ def run_inference(model, test_images, class_names, top_k=5):
         model: YOLO classification model
         test_images: List of test image dictionaries
         class_names: List of class names
+        imgsz: Image size for inference (should match training size)
         top_k: Number of top predictions to store
     
     Returns:
@@ -128,6 +139,13 @@ def run_inference(model, test_images, class_names, top_k=5):
     """
     print("\nRunning inference on test dataset...")
     
+    # Use IMGSZ from config if not specified
+    if imgsz is None:
+        imgsz = IMGSZ
+        print(f"Using image size from config: {imgsz}")
+    else:
+        print(f"Using specified image size: {imgsz}")
+    
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     all_predictions = []
     inference_times = []
@@ -135,10 +153,11 @@ def run_inference(model, test_images, class_names, top_k=5):
     for img_info in tqdm(test_images, desc="Processing images"):
         img_path = img_info['path']
         
-        # Run prediction
+        # Run prediction with specified image size
         start_time = datetime.now()
         results = model.predict(
             source=str(img_path),
+            imgsz=imgsz,  # IMPORTANT: Use the same size as training!
             verbose=False,
             device=device
         )
@@ -190,6 +209,7 @@ def run_inference(model, test_images, class_names, top_k=5):
     
     print(f"\nInference Statistics:")
     print(f"- Total images processed: {len(test_images)}")
+    print(f"- Image size used: {imgsz}")
     print(f"- Average inference time: {avg_inference_time:.4f} seconds")
     print(f"- FPS: {fps:.2f}")
     
@@ -770,9 +790,13 @@ def main():
     parser.add_argument('--model', type=str, required=True, help='Path to the trained model weights')
     parser.add_argument('--data', type=str, required=True, help='Path to dataset YAML file')
     parser.add_argument('--output', type=str, default='cls_test_results', help='Output directory for results')
+    parser.add_argument('--imgsz', type=int, default=None, help=f'Image size for inference (default: {IMGSZ} from config)')
     parser.add_argument('--num-samples', type=int, default=12, help='Number of sample visualizations')
     
     args = parser.parse_args()
+    
+    # Use image size from config if not specified
+    imgsz = args.imgsz if args.imgsz is not None else IMGSZ
     
     # Create output directory
     os.makedirs(args.output, exist_ok=True)
@@ -780,6 +804,7 @@ def main():
     print("="*70)
     print(" "*15 + "YOLO CLASSIFICATION INFERENCE")
     print("="*70)
+    print(f"Image size: {imgsz} (from {'command line' if args.imgsz else 'config.py'})")
     
     # Load model and configuration
     model, dataset_config, class_names, num_classes = load_model_and_config(
@@ -793,9 +818,9 @@ def main():
         print("Error: No test images found!")
         return
     
-    # Run inference
+    # Run inference with proper image size
     all_predictions, inference_times = run_inference(
-        model, test_images, class_names
+        model, test_images, class_names, imgsz=imgsz
     )
     
     # Calculate metrics
