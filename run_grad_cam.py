@@ -139,13 +139,20 @@ def process_images(model_path, input_dir, output_dir):
             
             # Generate GradCAM
             try:
-                saliency_map = gradcam(img_tensor, gt_idx)
-                print(f'Saliency map size is {saliency_map.shape}')
+                saliency_map_gt, saliency_map_pred = gradcam(img_tensor, gt_idx)
 
-                if saliency_map is not None:
+                if saliency_map_pred is not None:
+                    print(f'Predicted saliency map size is {saliency_map_pred.shape}')
                     # Apply heatmap
-                    overlaid, heatmap = apply_heatmap(img_resized, saliency_map)
-                    
+                    overlaid_pred, heatmap_pred = apply_heatmap(img_resized, saliency_map_pred)
+                    # Save predicted overlaid image
+                    output_path_pred = os.path.join(output_class_path, f'pred_{img_name}')
+                    cv2.imwrite(output_path_pred, cv2.cvtColor(heatmap_pred, cv2.COLOR_RGB2BGR))
+
+                if saliency_map_gt is not None:
+                    # Apply heatmap
+                    overlaid, heatmap = apply_heatmap(img_resized, saliency_map_gt)
+
                     # Save overlaid image
                     output_path = os.path.join(output_class_path, img_name)
                     cv2.imwrite(output_path, cv2.cvtColor(heatmap, cv2.COLOR_RGB2BGR))

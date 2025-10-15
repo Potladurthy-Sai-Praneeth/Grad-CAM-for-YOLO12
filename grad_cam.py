@@ -63,7 +63,23 @@ class YOLO12GradCAM:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.model.to(self.device)
 
-    
+
+    def get_predicted_class_boxidx(self, output):
+        '''
+        This function extracts the predicted class from the model output.
+        Predicted class helps us analyse the GradCAM for the target class.
+        '''
+        x = output.clone().permute(0,2,1)
+
+        class_scores_all = x[:, :, 4:]  # [1, num_predictions, num_classes]
+        class_scores_all = class_scores_all.squeeze(0)  # [num_predictions, num_classes]
+        
+        max_scores, max_classes = torch.max(class_scores_all, dim=1)  # [num_predictions]
+        top_k_values, top_k_indices = torch.topk(max_scores, k=1)
+        top_classes = max_classes[top_k_indices]  # [k]
+        
+        return top_classes.item(), top_k_indices.item()
+
     def avg_pool_gradients(self,input_tensor,activations,grads):
         '''
         This function computes the global average pooling of the gradients across the spatial dimensions.
@@ -147,28 +163,42 @@ class YOLO12GradCAM:
             resized = resized.squeeze(0)  # if originally single image, remove batch dim
         return resized
 
-    
-    def forward(self, input_img,gt_idx):
-        assert gt_idx is not None, "Please provide gt_idx for the target class"
+
+    def forward(self, input_img, gt_cls):
+        assert gt_cls is not None, "Please provide ground truth class"
         input_img = input_img.to(self.device)
 
         with torch.set_grad_enabled(True):
             raw_outputs = self.activations_and_grads(input_img)
-            index = 4 + gt_idx
-            subset_scores = raw_outputs[:,index,:]
-            target_score = subset_scores[:,torch.argmax(subset_scores)]
+            pred_cls,box_idx = self.get_predicted_class_boxidx(raw_outputs)
+            aggregated_cam_pred = None
+            if pred_cls != gt_cls:
+                print(f"Warning: Predicted class {pred_cls} does not match ground truth class {gt_cls}")
+                target_score_pred = raw_outputs[:,4+pred_cls,box_idx]
+                # target_score_pred = raw_outputs[:,4+pred_cls].sum()
+
+                self.model.model.zero_grad()
+                target_score_pred.backward(retain_graph=True)
+
+                cam_per_layer_pred = self.compute_cam_per_layer(input_img,self.activations_and_grads)
+                aggregated_cam_pred = self.aggregate_multi_layers(cam_per_layer_pred)
+                self.activations_and_grads.gradients.clear()
+
+            index = 4 + gt_cls
+            target_score = raw_outputs[:,index,box_idx]
+            # target_score = raw_outputs[:,index].sum()
 
             self.model.model.zero_grad()
             target_score.backward(retain_graph=True)
 
-        cam_per_layer = self.compute_cam_per_layer(input_img,self.activations_and_grads)
-        return self.aggregate_multi_layers(cam_per_layer)
+            cam_per_layer_gt = self.compute_cam_per_layer(input_img,self.activations_and_grads)
+            aggregated_cam_gt = self.aggregate_multi_layers(cam_per_layer_gt)
 
+            return (aggregated_cam_gt,aggregated_cam_pred)
 
-
-    def __call__(self,input_img,gt_idx):
+    def __call__(self,input_img,gt_cls):
         # store for final resize
-        return self.forward(input_img,gt_idx)
+        return self.forward(input_img,gt_cls)
 
     def __del__(self):
         self.activations_and_grads.release()

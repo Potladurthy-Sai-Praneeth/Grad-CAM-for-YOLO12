@@ -25,7 +25,8 @@ class YOLOTrainer:
         self.device = [0,1]
         # print(f"Using device: {self.device}")
         
-        self.model = YOLO(f'yolo12{model_size}.pt')
+        # self.model = YOLO(f'yolo12{model_size}.pt')
+        self.model = YOLO('yolo12-cls.yaml').load(f'yolo12{model_size}.pt') 
         self.num_workers = torch.multiprocessing.cpu_count()  
 
 
@@ -52,8 +53,8 @@ class YOLOTrainer:
             'warmup_epochs': 3,
             'warmup_momentum': 0.8,
             'warmup_bias_lr': 0.1,
-            'box': 7,
-            'cls': 1.0,   # Giving high emphasis on classification loss (Because the interpretability is affected more by classification than localization)
+            # 'box': 7,
+            # 'cls': 1.0,   # Giving high emphasis on classification loss (Because the interpretability is affected more by classification than localization)
         }
         
         print("Starting YOLO segmentation training...")
