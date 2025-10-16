@@ -81,7 +81,7 @@ def apply_heatmap(image, saliency_map, alpha=0.5):
     return overlaid, heatmap
 
 
-def process_images(model_path, input_dir, output_dir):
+def process_images(model_path, input_dir, output_dir,mode):
     """
     Process all images in input_dir and save heatmaps to output_dir
     
@@ -94,7 +94,7 @@ def process_images(model_path, input_dir, output_dir):
         Dictionary with sample images for visualization
     """
     # Initialize GradCAM
-    gradcam = YOLO12GradCAM(model_path)
+    gradcam = YOLO12GradCAM(model_path,mode=mode)
     
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -231,6 +231,7 @@ def main():
     parser.add_argument('--model', type=str, required=True, help='Path to YOLO model')
     parser.add_argument('--input', type=str, required=True, help='Directory with input images')
     parser.add_argument('--output', type=str, required=True, help='Directory to save output images')
+    parser.add_argument('--mode', type=str, default='cls', choices=['cls', 'box'], help="Model training mode: 'cls' for classification, 'box' for bounding-box detection")
     args = parser.parse_args()
 
     VISUALIZATION_PATH = f'{args.output}/combined_visualization.png'
@@ -254,7 +255,7 @@ def main():
     print("="*60)
     
     # Process all images
-    class_samples = process_images(args.model, args.input, args.output)
+    class_samples = process_images(args.model, args.input, args.output,args.mode)
     
     # Create combined visualization
     if class_samples:

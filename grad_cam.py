@@ -38,14 +38,23 @@ class ActivationsAndGradients:
         output.register_hook(_store_grad)
 
     def __call__(self, x):
+        '''
+        This function retruns the model output after doing a forward pass.
+        Args:
+            x: Input image tensor
+        Returns:
+            Model output
+            Case 1 - For bounding box detection: Raw output from the model (before NMS) .
+                    It returns a tuple where the first element is [batch_size, 4+num_classes, num_predictions] and the second element is the activation features at the target layers.
+            Case 2 - For classification: Raw output from the model.
+                    It returns a tuple where the first element is [batch_size, num_classes] (probabilities for each class) and the second element is the raw scores for each class before softmax.
+                    The raw scores are useful for understanding the model's confidence in its predictions and hence used for backpropagation to compute gradients for Grad-CAM.
+        '''
         self.gradients.clear()
         self.activations.clear()
 
         x = x.requires_grad_(True)
-
-        # model.model(x) returns a tuple of tensors where the first element is the output with bounding boxe and confidence scores and 
-        # the rest are the list of feature maps at different scales.
-        return self.model.model(x)[0]  
+        return self.model.model(x)  
 
     def release(self):
         for handle in self.handles:
@@ -53,11 +62,15 @@ class ActivationsAndGradients:
 
 class YOLO12GradCAM:
 
-    def __init__(self, model_path):
+    def __init__(self, model_path,mode='cls'):
         self.model = YOLO(model_path)
         self.gradients = dict()
         self.activations = dict()
-        self.target_layers =  [self.model.model.model[i] for i in self.model.model.model[-1].f]
+        if mode == 'box':
+            self.target_layers =  [self.model.model.model[i] for i in self.model.model.model[-1].f]
+        elif mode == 'cls':
+            self.target_layers = [self.model.model.model[-2]]
+        
         self.activations_and_grads = ActivationsAndGradients(self.model, self.target_layers)
         self.outputs = []
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -164,12 +177,15 @@ class YOLO12GradCAM:
         return resized
 
 
-    def forward(self, input_img, gt_cls):
+    def forward_box(self, input_img, gt_cls):
+        '''
+        This function is used to compute the grad-CAM when the YOLO is trained on bounding-box detection.
+        '''
         assert gt_cls is not None, "Please provide ground truth class"
         input_img = input_img.to(self.device)
 
         with torch.set_grad_enabled(True):
-            raw_outputs = self.activations_and_grads(input_img)
+            raw_outputs = self.activations_and_grads(input_img)[0]
             pred_cls,box_idx = self.get_predicted_class_boxidx(raw_outputs)
             aggregated_cam_pred = None
             if pred_cls != gt_cls:
@@ -187,6 +203,29 @@ class YOLO12GradCAM:
             index = 4 + gt_cls
             target_score = raw_outputs[:,index,box_idx]
             # target_score = raw_outputs[:,index].sum()
+
+            self.model.model.zero_grad()
+            target_score.backward(retain_graph=True)
+
+            cam_per_layer_gt = self.compute_cam_per_layer(input_img,self.activations_and_grads)
+            aggregated_cam_gt = self.aggregate_multi_layers(cam_per_layer_gt)
+
+            return (aggregated_cam_gt,aggregated_cam_pred)
+    
+    def forward(self, input_img, gt_cls):
+        '''
+        This function is used to compute the grad-CAM when the YOLO is trained on classification.
+        Since we need to explain the choice of the model for the predicted class, we prefer YOLO-cls version for explanability but not bounding box detection.
+        '''
+        assert gt_cls is not None, "Please provide ground truth class"
+        input_img = input_img.to(self.device)
+
+        with torch.set_grad_enabled(True):
+            raw_outputs = self.activations_and_grads(input_img)
+            pred_cls = torch.argmax(raw_outputs[0],dim=1).item()
+            aggregated_cam_pred = None
+
+            target_score = raw_outputs[1][:,pred_cls]
 
             self.model.model.zero_grad()
             target_score.backward(retain_graph=True)
