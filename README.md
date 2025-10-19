@@ -21,9 +21,9 @@ The system can detect **10 different tomato leaf conditions**:
 
 **Grad-CAM (Gradient-weighted Class Activation Mapping)** is an explainability technique that produces visual explanations for decisions from CNN-based models. It highlights the important regions in the image that influenced the model's prediction.
 
-### How Grad-CAM Works in This Project
+### How Grad-CAM Works
 
-This implementation (`grad_cam.py`) provides a custom Grad-CAM solution tailored for YOLO models [2,3]:
+This implementation (`grad_cam.py`) provides a custom Grad-CAM solution tailored for YOLO models [2,5]:
 
 1. **Activation and Gradient Extraction**
 2. **Forward Pass with Gradient Tracking**
