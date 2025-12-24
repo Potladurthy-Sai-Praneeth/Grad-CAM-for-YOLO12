@@ -72,7 +72,7 @@ class_name_mapping = {
 }
 
 label_name_mapping = {
-  'Caterpillar': 'Caterpillar',
-  'Diabrotica speciosa': 'Diabrotica speciosa',
-  'Healthy': 'Healthy',
+  'caterpillar': 'Caterpillar',
+  'diabroticaspeciosa': 'Diabrotica speciosa',
+  'healthy': 'Healthy',
 }
