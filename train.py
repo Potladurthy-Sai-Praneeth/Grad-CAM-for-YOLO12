@@ -28,7 +28,7 @@ class YOLOTrainer:
         if self.mode == 'bbox':
             assert Path(dataset_path).is_file(), f"Dataset YAML file {dataset_path} does not exist"
             self.dataset_path = dataset_path
-            self.model = YOLO(f'yolo12{model_size}.pt')
+            self.model = YOLO(f'yolo12{self.model_size}.pt')
         
         # For cls mode, expect directory path or YAML (we'll extract the directory from YAML)
         elif self.mode == 'cls':
@@ -47,7 +47,7 @@ class YOLOTrainer:
             else:
                 raise ValueError(f"For classification, provide either a dataset directory or YAML file with 'path' field")
             
-            self.model = YOLO('yolo12-cls.yaml').load(f'yolo12{model_size}.pt')
+            self.model = YOLO('yolo12-cls.yaml').load(f'yolo12{self.model_size}.pt')
 
         self.num_workers = torch.multiprocessing.cpu_count()
 
