@@ -122,7 +122,8 @@ def process_images(model_path, input_dir, output_dir,mode):
         # Process each image
         for idx, img_name in enumerate(image_files):
             img_path = os.path.join(class_path, img_name)
-            gt_idx = label_class_mapping[img_path.split('/')[-1].split('_')[0]]
+            # gt_idx = label_class_mapping[img_path.split('/')[-1].split('_')[0]]
+            gt_idx = label_class_mapping[img_path.split('/')[-1].split(' ')[0]]  # Use this for soybean dataset
             
             # Read image
             img_bgr = cv2.imread(img_path)
