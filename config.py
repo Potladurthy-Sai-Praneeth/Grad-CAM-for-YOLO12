@@ -59,9 +59,9 @@ MODEL_SIZE = 'n'
 
 
 label_class_mapping = {
-    'Caterpillar': 0,
-    'Diabrotica speciosa': 1,
-    'Healthy': 2,
+    'caterpillar': 0,
+    'diabroticaspeciosa': 1,
+    'healthy': 2,
 }
 
 class_name_mapping = {
